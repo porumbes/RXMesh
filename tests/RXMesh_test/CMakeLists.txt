@@ -15,6 +15,7 @@ set( SOURCE_LIST
 	test_edge_flip.h
 	edge_flip.cuh
 	test_validate.h
+	test_space_filling.cu
 )
 
 target_sources( RXMesh_test 
