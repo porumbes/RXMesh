@@ -2,9 +2,11 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include <set>
 #include <vector>
 
+#include "rxmesh/geometry_factory.h"
 #include "rxmesh/rxmesh.h"
 #include "rxmesh/util/import_obj.h"
 #include "rxmesh/util/msh_io.h"
@@ -266,4 +268,97 @@ TEST(RXMeshSlice1, TetMeshInitAndValidation)
     EXPECT_EQ(rx.get_num_tets(), static_cast<uint32_t>(tv.size()));
 
     rx.validate_host_and_slab_topology();
+}
+
+namespace {
+
+// 1-to-4 triangle midpoint subdivision preserving closed manifold topology
+void subdivide_triangle_mesh_1to4(std::vector<std::vector<uint32_t>>& fv,
+                                  uint32_t& num_vertices)
+{
+    std::map<std::pair<uint32_t, uint32_t>, uint32_t> edge_midpoint;
+    auto get_midpoint = [&](uint32_t u, uint32_t v) -> uint32_t {
+        if (u > v) {
+            std::swap(u, v);
+        }
+        auto [it, inserted] = edge_midpoint.emplace(std::make_pair(u, v),
+                                                    num_vertices);
+        if (inserted) {
+            ++num_vertices;
+        }
+        return it->second;
+    };
+
+    std::vector<std::vector<uint32_t>> new_fv;
+    new_fv.reserve(fv.size() * 4);
+    for (const auto& tri : fv) {
+        const uint32_t v0  = tri[0];
+        const uint32_t v1  = tri[1];
+        const uint32_t v2  = tri[2];
+        const uint32_t m01 = get_midpoint(v0, v1);
+        const uint32_t m12 = get_midpoint(v1, v2);
+        const uint32_t m20 = get_midpoint(v2, v0);
+
+        new_fv.push_back({v0, m01, m20});
+        new_fv.push_back({v1, m12, m01});
+        new_fv.push_back({v2, m20, m12});
+        new_fv.push_back({m01, m12, m20});
+    }
+    fv.swap(new_fv);
+}
+
+}  // namespace
+
+TEST(RXMeshSlice1, ScalingBenchmarkPlane50kTo2M)
+{
+    // Grid dimensions (nx, ny) yielding ~50k, 100k, 200k, 500k, 1M, 2M tris:
+    // num_tris = 2 * (nx - 1) * (ny - 1)
+    const std::vector<std::pair<uint32_t, uint32_t>> grid_sizes = {
+        {159, 159},   //  49,928 faces (~50k)
+        {225, 225},   // 100,352 faces (~100k)
+        {317, 317},   // 199,712 faces (~200k)
+        {501, 501},   // 500,000 faces (500k)
+        {708, 708},   // 999,698 faces (~1M)
+        {1001, 1001}  // 2,000,000 faces (2M)
+    };
+
+    for (const auto& [nx, ny] : grid_sizes) {
+        std::vector<std::vector<rx_coord_t>> verts;
+        std::vector<std::vector<uint32_t>>   fv;
+        create_plane(verts, fv, nx, ny);
+
+        RXMESH_INFO("=== Scaling Benchmark Plane: #Faces = {} ({}x{}) ===",
+                    fv.size(),
+                    nx,
+                    ny);
+        HostRXMesh rx(fv);
+        EXPECT_EQ(rx.get_num_faces(), static_cast<uint32_t>(fv.size()));
+        EXPECT_EQ(rx.get_num_vertices(), nx * ny);
+        rx.validate_host_and_slab_topology();
+    }
+}
+
+TEST(RXMeshSlice1, ScalingBenchmarkDragonSubdivided80kTo1_28M)
+{
+    std::vector<std::vector<rx_coord_t>> verts;
+    std::vector<std::vector<uint32_t>>   fv;
+    ASSERT_TRUE(import_obj(STRINGIFY(INPUT_DIR) "dragon.obj", verts, fv));
+    uint32_t num_verts = static_cast<uint32_t>(verts.size());
+
+    // 3 levels of 1-to-4 subdivision: 20k -> 80k -> 320k -> 1,280k faces
+    for (int level = 1; level <= 3; ++level) {
+        subdivide_triangle_mesh_1to4(fv, num_verts);
+        RXMESH_INFO(
+            "=== Scaling Benchmark Subdivided Dragon (L{}): #Faces = {}, "
+            "#Vertices = {} ===",
+            level,
+            fv.size(),
+            num_verts);
+        HostRXMesh rx(fv);
+        EXPECT_EQ(rx.get_num_faces(), static_cast<uint32_t>(fv.size()));
+        EXPECT_EQ(rx.get_num_vertices(), num_verts);
+        EXPECT_TRUE(rx.is_closed());
+        EXPECT_TRUE(rx.is_edge_manifold());
+        rx.validate_host_and_slab_topology();
+    }
 }

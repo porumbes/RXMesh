@@ -121,48 +121,55 @@ void Patcher::execute_lloyd(std::vector<uint32_t>&       seeds,
         }
 
         std::fill(interior_visited.begin(), interior_visited.end(), INVALID32);
-        s_queue.resize(max_patch_size);
 
-        for (uint32_t p = 0; p < m_num_patches; ++p) {
-            const uint32_t p_start = (p == 0) ? 0 : patches_offset[p - 1];
-            const uint32_t p_end   = patches_offset[p];
-            const uint32_t p_size  = p_end - p_start;
+#pragma omp parallel
+        {
+            std::vector<uint32_t> local_queue(max_patch_size);
+#pragma omp for
+            for (int p_idx = 0; p_idx < static_cast<int>(m_num_patches);
+                 ++p_idx) {
+                const uint32_t p = static_cast<uint32_t>(p_idx);
+                const uint32_t p_start =
+                    (p == 0) ? 0 : patches_offset[p - 1];
+                const uint32_t p_end  = patches_offset[p];
+                const uint32_t p_size = p_end - p_start;
 
-            uint32_t s_queue_size = 0;
-            for (uint32_t i = 0; i < p_size; ++i) {
-                uint32_t packed = patches_val[p_start + i];
-                if (packed & 1u) {
-                    uint32_t f          = packed >> 1;
-                    s_queue[s_queue_size++] = f;
-                    interior_visited[f] = 0;
-                }
-            }
-
-            if (s_queue_size > 0) {
-                uint32_t q_start = 0;
-                uint32_t q_end   = 0;
-                while (true) {
-                    q_start = q_end;
-                    q_end   = s_queue_size;
-                    if (q_end == p_size) {
-                        break;
+                uint32_t s_queue_size = 0;
+                for (uint32_t i = 0; i < p_size; ++i) {
+                    uint32_t packed = patches_val[p_start + i];
+                    if (packed & 1u) {
+                        uint32_t f                  = packed >> 1;
+                        local_queue[s_queue_size++] = f;
+                        interior_visited[f]         = 0;
                     }
-                    for (uint32_t i = q_start; i < q_end; ++i) {
-                        uint32_t f = s_queue[i];
-                        for (uint32_t idx = ff_offset[f];
-                             idx < ff_offset[f + 1];
-                             ++idx) {
-                            uint32_t nf = ff_values[idx];
-                            if ((face_patch[nf] >> 1) == p &&
-                                interior_visited[nf] == INVALID32) {
-                                interior_visited[nf]    = p;
-                                s_queue[s_queue_size++] = nf;
+                }
+
+                if (s_queue_size > 0) {
+                    uint32_t q_start = 0;
+                    uint32_t q_end   = 0;
+                    while (true) {
+                        q_start = q_end;
+                        q_end   = s_queue_size;
+                        if (q_end == p_size) {
+                            break;
+                        }
+                        for (uint32_t i = q_start; i < q_end; ++i) {
+                            uint32_t f = local_queue[i];
+                            for (uint32_t idx = ff_offset[f];
+                                 idx < ff_offset[f + 1];
+                                 ++idx) {
+                                uint32_t nf = ff_values[idx];
+                                if ((face_patch[nf] >> 1) == p &&
+                                    interior_visited[nf] == INVALID32) {
+                                    interior_visited[nf]        = p;
+                                    local_queue[s_queue_size++] = nf;
+                                }
                             }
                         }
                     }
-                }
-                if (q_start != 0) {
-                    seeds[p] = s_queue[q_start];
+                    if (q_start != 0) {
+                        seeds[p] = local_queue[q_start];
+                    }
                 }
             }
         }
