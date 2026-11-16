@@ -1,0 +1,8 @@
+#pragma once
+#include <array>
+
+namespace cuda {
+namespace std {
+using ::std::array;
+}  // namespace std
+}  // namespace cuda

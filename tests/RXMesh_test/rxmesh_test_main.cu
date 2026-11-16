@@ -17,11 +17,13 @@ struct RXMeshTestArg
 } rxmesh_args;
 
 // clang-format off
+#if defined(__CUDACC__)
 #include "test_queries.h"
 #include "test_patch_scheduler.cuh"
 #include "test_patch_lock.cuh"
 #include "test_wasted_work.cuh"
 #include "test_grad.h"
+#endif
 // clang-format on
 
 int main(int argc, char** argv)

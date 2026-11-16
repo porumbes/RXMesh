@@ -1,25 +1,39 @@
 #To run with cuDSS:
 #>> cmake -DRX_USE_CUDSS=ON -DCMAKE_PREFIX_PATH="C:\Program Files\NVIDIA cuDSS\v0.6\lib\12\cmake" ..
-cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES native)
+if(APPLE)
+    set(RXMESH_DEFAULT_USE_CUDA "OFF")
+else()
+    set(RXMESH_DEFAULT_USE_CUDA "ON")
 endif()
+set(RX_USE_CUDA "${RXMESH_DEFAULT_USE_CUDA}" CACHE BOOL "Enable CUDA backend")
 
 #So we can use FetchContent_MakeAvailable without warnings
-cmake_policy(SET CMP0169 OLD)
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
 
 project(RXMesh 
         VERSION 0.2.1 
-        LANGUAGES C CXX CUDA)
+        LANGUAGES C CXX)
 
 include(cmake/RXMeshApp.cmake)
-# CMake emits per-architecture LTO IR only for numeric architecture values.
-rxmesh_resolve_cuda_architectures(
-    CMAKE_CUDA_ARCHITECTURES
-    ${CMAKE_CUDA_ARCHITECTURES})
-
-message(STATUS "RXMesh: CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+if(${RX_USE_CUDA})
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES native)
+    endif()
+    enable_language(CUDA)
+    # CMake emits per-architecture LTO IR only for numeric architecture values.
+    rxmesh_resolve_cuda_architectures(
+        CMAKE_CUDA_ARCHITECTURES
+        ${CMAKE_CUDA_ARCHITECTURES})
+    message(STATUS "RXMesh: CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_STANDARD_REQUIRED TRUE)
+else()
+    message(STATUS "RXMesh: Building without CUDA (Host / Unified Memory backend)")
+endif()
 
 
 set(RX_USE_POLYSCOPE "ON" CACHE BOOL "Enable Ployscope for visualization")
@@ -38,8 +52,6 @@ message(STATUS "RXMesh: Double precision is ${RX_USE_DOUBLE}")
 
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_CUDA_STANDARD_REQUIRED TRUE)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -81,7 +93,7 @@ if(${RX_BUILD_TESTS})
     add_subdirectory(tests)
 endif()
 
-if(${RX_BUILD_APPS})
+if(${RX_BUILD_APPS} AND ${RX_USE_CUDA})
 	add_subdirectory(apps)
 endif()
 

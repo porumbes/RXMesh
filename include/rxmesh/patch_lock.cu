@@ -1,6 +1,8 @@
 #include "rxmesh/patch_lock.h"
 
+#if defined(__CUDACC__)
 #include "rxmesh/kernels/util.cuh"
+#endif
 #include "rxmesh/util/macros.h"
 
 namespace rxmesh {

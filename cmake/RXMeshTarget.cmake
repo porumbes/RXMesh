@@ -7,23 +7,44 @@ if(NOT DEFINED RXMESH_SOURCE_DIR)
 endif()
 
 # RXMesh compiled library
-set(RXMESH_LIBRARY_SOURCES
+set(RXMESH_HOST_COMPAT_SOURCES
     "${RXMESH_SOURCE_DIR}/include/rxmesh/rxmesh.cpp"
-    "${RXMESH_SOURCE_DIR}/include/rxmesh/rxmesh_static.cu"
-    "${RXMESH_SOURCE_DIR}/include/rxmesh/rxmesh_dynamic.cu"
-    "${RXMESH_SOURCE_DIR}/include/rxmesh/query.cu"
-    "${RXMESH_SOURCE_DIR}/include/rxmesh/attribute.cu"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_stash.cu"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/hash_functions.cu"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/lp_hashtable.cu"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_info.cu"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_lock.cu"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_scheduler.cu"
-    "${RXMESH_SOURCE_DIR}/include/rxmesh/reduce_handle.cu"
-    "${RXMESH_SOURCE_DIR}/include/rxmesh/patcher/patcher.cu"
+    "${RXMESH_SOURCE_DIR}/include/rxmesh/patcher/patcher.cpp"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/util/git_sha1.cpp"
     "${RXMESH_SOURCE_DIR}/include/rxmesh/util/msh_io.cpp"
 )
+
+if(${RX_USE_CUDA})
+    set(RXMESH_LIBRARY_SOURCES
+        ${RXMESH_HOST_COMPAT_SOURCES}
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/patcher/patcher_lloyd.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/rxmesh_static.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/rxmesh_dynamic.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/query.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/attribute.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/reduce_handle.cu"
+    )
+else()
+    set(RXMESH_LIBRARY_SOURCES
+        ${RXMESH_HOST_COMPAT_SOURCES}
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/patcher/patcher_lloyd_cpu.cpp"
+    )
+    set_source_files_properties(
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_stash.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/hash_functions.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/lp_hashtable.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_info.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_lock.cu"
+        "${RXMESH_SOURCE_DIR}/include/rxmesh/patch_scheduler.cu"
+        PROPERTIES LANGUAGE CXX
+    )
+endif()
 
 file(GLOB_RECURSE RXMESH_LIBRARY_HEADERS CONFIGURE_DEPENDS
     "${RXMESH_SOURCE_DIR}/include/rxmesh/*.h"
@@ -39,10 +60,12 @@ source_group(
     FILES ${RXMESH_LIBRARY_SOURCES} ${RXMESH_LIBRARY_HEADERS}
 )
 
-# Required for targets that compile CUDA sources.
-set_property(TARGET RXMesh PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 set_property(TARGET RXMesh PROPERTY POSITION_INDEPENDENT_CODE ON)
-rxmesh_enable_cuda_device_lto(RXMesh)
+if(${RX_USE_CUDA})
+    # Required for targets that compile CUDA sources.
+    set_property(TARGET RXMesh PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    rxmesh_enable_cuda_device_lto(RXMesh)
+endif()
 
 target_compile_features(RXMesh PUBLIC cxx_std_17)
 target_compile_definitions(RXMesh
@@ -64,10 +87,16 @@ target_include_directories(RXMesh
     PUBLIC "${rapidjson_SOURCE_DIR}/include"
     PUBLIC "${spdlog_SOURCE_DIR}/include"
     PUBLIC "${cereal_SOURCE_DIR}/include"
-    PUBLIC ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
 )
 
-target_link_libraries(RXMesh PUBLIC cuBQL cuBQL_queries)
+if(${RX_USE_CUDA})
+    target_include_directories(RXMesh PUBLIC ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+    target_link_libraries(RXMesh PUBLIC cuBQL cuBQL_queries)
+else()
+    target_include_directories(RXMesh PUBLIC "${RXMESH_SOURCE_DIR}/include/rxmesh/compat/cuda")
+    target_compile_options(RXMesh PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include cuda_runtime_api.h>)
+endif()
+
 target_link_libraries(RXMesh PUBLIC rapidobj::rapidobj)
 target_link_libraries(RXMesh PRIVATE mshio::mshio)
 
@@ -75,6 +104,7 @@ target_link_libraries(RXMesh PRIVATE mshio::mshio)
 set(cxx_flags
     $<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /openmp:experimental /MP /std:c++17 /bigobj>  # Add MSVC-specific compiler flags here
     $<$<CXX_COMPILER_ID:GNU>:-Wall -m64 -fopenmp -O3 -std=c++17 -Wno-unused-function> # Add GCC/Clang-specific compiler flags here
+    $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wall -O3 -std=c++17 -Wno-unused-function>
 )
 
 set(MSVC_XCOMPILER_FLAGS "/openmp:experimental /MP /std:c++17 /bigobj /Zi")
@@ -121,14 +151,16 @@ endif()
 
 
 # cuDSS
-if(${RX_USE_CUDSS})
+if(${RX_USE_CUDA} AND ${RX_USE_CUDSS})
     rxmesh_enable_cudss(RXMesh)
 endif()
 
 #cuSolver and cuSparse
-find_package(CUDAToolkit REQUIRED)
-target_link_libraries(RXMesh PUBLIC CUDA::cusparse)
-target_link_libraries(RXMesh PUBLIC CUDA::cusolver)
+if(${RX_USE_CUDA})
+    find_package(CUDAToolkit REQUIRED)
+    target_link_libraries(RXMesh PUBLIC CUDA::cusparse)
+    target_link_libraries(RXMesh PUBLIC CUDA::cusolver)
+endif()
 
 
 #Eigen

@@ -86,8 +86,16 @@ function(rxmesh_add_app target)
   endif()
 
   set_target_properties(${target} PROPERTIES FOLDER "${RXAPP_FOLDER}")
-  set_property(TARGET ${target} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-  rxmesh_enable_cuda_device_lto(${target})
+  if(${RX_USE_CUDA})
+    set_property(TARGET ${target} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    rxmesh_enable_cuda_device_lto(${target})
+  else()
+    foreach(src_file IN LISTS RXAPP_SOURCES)
+      if(src_file MATCHES "\\.cu$")
+        set_source_files_properties(${src_file} PROPERTIES LANGUAGE CXX)
+      endif()
+    endforeach()
+  endif()
 
   if(RXAPP_SOURCES)
     source_group(      

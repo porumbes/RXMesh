@@ -258,6 +258,10 @@ class Patcher
 
     void extract_ribbons(const std::vector<std::vector<uint32_t>>& fv);
 
+    void execute_lloyd(std::vector<uint32_t>&       seeds,
+                       const std::vector<uint32_t>& ff_offset,
+                       const std::vector<uint32_t>& ff_values);
+
     uint32_t construct_patches_compressed_format(uint32_t* d_face_patch,
                                                  void*  d_cub_temp_storage_scan,
                                                  void*  d_cub_temp_storage_max,

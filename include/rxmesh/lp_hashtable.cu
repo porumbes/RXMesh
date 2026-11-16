@@ -5,8 +5,10 @@
 #include <cstdlib>
 
 #include "rxmesh/hash_functions.h"
+#if defined(__CUDACC__)
 #include "rxmesh/kernels/loader.cuh"
 #include "rxmesh/kernels/util.cuh"
+#endif
 #include "rxmesh/util/macros.h"
 #include "rxmesh/util/prime_numbers.h"
 
@@ -101,6 +103,7 @@ __host__ void LPHashTable::move(const LPHashTable src)
 }
 
 
+#if defined(__CUDACC__)
 // Explicit instantiations: blockSize/blockThreads = 128, 256, 320, 384, 512,
 // 768, 1024
 #define LPHASHTABLE_CLEAR_INSTANTIATE(blockThreads) \
@@ -128,6 +131,7 @@ LPHASHTABLE_WRITE_TO_GLOBAL_INSTANTIATE(1024)
 
 #undef LPHASHTABLE_CLEAR_INSTANTIATE
 #undef LPHASHTABLE_WRITE_TO_GLOBAL_INSTANTIATE
+#endif
 
 // randomize_hash_functions instantiated with MarsRng32
 template void LPHashTable::randomize_hash_functions<MarsRng32>(MarsRng32&);
